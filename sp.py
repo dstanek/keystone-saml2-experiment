@@ -920,15 +920,8 @@ if __name__ == '__main__':
 
     SRV = wsgiserver.CherryPyWSGIServer((HOST, PORT), application)
 
-    _https = ""
-    if service_conf.HTTPS:
-        from cherrypy.wsgiserver import ssl_pyopenssl
-
-        SRV.ssl_adapter = ssl_pyopenssl.pyOpenSSLAdapter(SERVER_CERT,
-                                                         SERVER_KEY, CERT_CHAIN)
-        _https = " using SSL/TLS"
     logger.info("Server starting")
-    print("SP listening on %s:%s%s" % (HOST, PORT, _https))
+    print("SP listening on %s:%s" % (HOST, PORT))
     try:
         SRV.start()
     except KeyboardInterrupt:
