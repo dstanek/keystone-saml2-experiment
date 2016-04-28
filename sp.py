@@ -43,7 +43,7 @@ from saml2.s_utils import UnsupportedBinding
 from saml2.s_utils import decode_base64_and_inflate
 from saml2.s_utils import rndstr
 from saml2.s_utils import sid
-from saml2.saml import NAMEID_FORMAT_PERSISTENT
+from saml2.saml import NAMEID_FORMAT_TRANSIENT
 from saml2.samlp import Extensions
 
 logger = logging.getLogger("")
@@ -581,7 +581,7 @@ class SSO(object):
             req_id, req = _cli.create_authn_request(destination,
                                                     binding=return_binding,
                                                     extensions=extensions,
-                                                    nameid_format=NAMEID_FORMAT_PERSISTENT)
+                                                    nameid_format=NAMEID_FORMAT_TRANSIENT)
             _rstate = rndstr()
             self.cache.relay_state[_rstate] = came_from
             ht_args = _cli.apply_binding(_binding, "%s" % req, destination,
