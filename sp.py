@@ -95,37 +95,6 @@ def dict_to_table(ava, lev=0, width=1):
     return txt
 
 
-def handle_static(environ, start_response, path):
-    """
-    Creates a response for a static file. There might be a longer path
-    then just /static/... - if so strip the path leading up to static.
-
-    :param environ: wsgi enviroment
-    :param start_response: wsgi start response
-    :param path: the static file and path to the file.
-    :return: wsgi response for the static file.
-    """
-    try:
-        text = open(path).read()
-        if path.endswith(".ico"):
-            resp = Response(text, headers=[('Content-Type', "image/x-icon")])
-        elif path.endswith(".html"):
-            resp = Response(text, headers=[('Content-Type', 'text/html')])
-        elif path.endswith(".txt"):
-            resp = Response(text, headers=[('Content-Type', 'text/plain')])
-        elif path.endswith(".css"):
-            resp = Response(text, headers=[('Content-Type', 'text/css')])
-        elif path.endswith(".js"):
-            resp = Response(text, headers=[('Content-Type', 'text/javascript')])
-        elif path.endswith(".png"):
-            resp = Response(text, headers=[('Content-Type', 'image/png')])
-        else:
-            resp = Response(text)
-    except IOError:
-        resp = NotFound()
-    return resp(environ, start_response)
-
-
 class ECPResponse(object):
     code = 200
     title = 'OK'
@@ -828,8 +797,6 @@ def application(environ, start_response):
                     return func()
                 else:
                     return spec(environ, start_response, SP)
-        if re.match(".*static/.*", path):
-            return handle_static(environ, start_response, path)
         return not_found(environ, start_response)
     except StatusError as err:
         logging.error("StatusError: %s" % err)
