@@ -56,13 +56,21 @@ def dict_to_table(ava, lev=0, width=1):
     txt = ['<table border=%s bordercolor="black">\n' % width]
     for prop, valarr in ava.items():
         txt.append("<tr>\n")
-        if isinstance(valarr, six.string_types):
-            txt.append("<th>%s</th>\n" % str(prop))
+
+        if isinstance(prop, six.text_type):
+            prop = prop.encode('utf-8')
+        if isinstance(valarr, six.text_type):
+            valarr = valarr.encode('utf-8')
+
+        if isinstance(valarr, six.binary_type):
+            txt.append("<th>%s</th>\n" % prop)
             txt.append("<td>%s</td>\n" % valarr)
         elif isinstance(valarr, list):
             i = 0
             n = len(valarr)
             for val in valarr:
+                if isinstance(val, six.text_type):
+                    val = val.encode('utf-8')
                 if not i:
                     txt.append("<th rowspan=%d>%s</td>\n" % (len(valarr), prop))
                 else:
@@ -569,7 +577,7 @@ def main(environ, start_response, sp, cache):
         return sso.do()
 
     body = dict_to_table(user.data)
-    authn_stmt = cgi.escape(user.authn_statement)
+    authn_stmt = cgi.escape(user.authn_statement.encode('utf-8'))
     body.append('<br><pre>' + authn_stmt + "</pre>")
     body.append('<br><a href="/logout">logout</a>')
 

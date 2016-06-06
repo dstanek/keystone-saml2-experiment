@@ -6,6 +6,7 @@ import importlib
 import logging
 import re
 import sys
+from wsgiref import simple_server
 
 from saml2.client import Saml2Client
 from saml2.httputil import ServiceError
@@ -82,7 +83,7 @@ class Cache(object):
         cookie[self.cookie_name]['path'] = "/"
         cookie[self.cookie_name]["expires"] = _expiration(480)
         logger.debug("Cookie expires: %s", cookie[self.cookie_name]["expires"])
-        return cookie.output().split(": ", 1)
+        return tuple(cookie.output().split(": ", 1))
 
 
 def application(environ, start_response):
@@ -155,8 +156,6 @@ def add_urls():
 
 
 if __name__ == '__main__':
-    from cherrypy import wsgiserver
-
     _parser = argparse.ArgumentParser()
     _parser.add_argument('-d', dest='debug', action='store_true',
                          help="Print debug information")
@@ -230,11 +229,10 @@ if __name__ == '__main__':
         pass
     ds.DefaultSignature(sign_alg, digest_alg)
 
-    SRV = wsgiserver.CherryPyWSGIServer((HOST, PORT), application)
-
+    server = simple_server.make_server(HOST, PORT, application)
     logger.info("Server starting")
     print("SP listening on %s:%s" % (HOST, PORT))
     try:
-        SRV.start()
+        server.serve_forever()
     except KeyboardInterrupt:
-        SRV.stop()
+        pass
