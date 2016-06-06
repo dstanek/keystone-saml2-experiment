@@ -114,7 +114,7 @@ def application(environ, start_response):
                     func = getattr(cls, func_name)
                     return func()
                 else:
-                    return spec(environ, start_response, SP)
+                    return spec(environ, start_response, SP, CACHE)
         return not_found(environ, start_response)
     except StatusError as err:
         logging.error("StatusError: %s" % err)
@@ -191,7 +191,7 @@ if __name__ == '__main__':
         ARGS["wayf"] = _args.wayf
     sp.ARGS = ARGS
 
-    CACHE = sp.CACHE = Cache()
+    CACHE = Cache()
     CNFBASE = _args.config
     if _args.seed:
         SEED = _args.seed

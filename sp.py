@@ -544,7 +544,7 @@ class SLO(Service):
         else:
             self.sp.parse_logout_request_response(message, binding)
 
-        return finish_logout(self.environ, self.start_response)
+        return finish_logout(self.environ, self.start_response, self.cache)
 
 
 # ----------------------------------------------------------------------------
@@ -561,11 +561,11 @@ def not_found(environ, start_response):
 
 
 # noinspection PyUnusedLocal
-def main(environ, start_response, sp):
-    user = CACHE.get_user(environ)
+def main(environ, start_response, sp, cache):
+    user = cache.get_user(environ)
 
     if user is None:
-        sso = SSO(sp, environ, start_response, cache=CACHE, **ARGS)
+        sso = SSO(sp, environ, start_response, cache=cache, **ARGS)
         return sso.do()
 
     body = dict_to_table(user.data)
@@ -577,12 +577,12 @@ def main(environ, start_response, sp):
     return resp(environ, start_response)
 
 
-def disco(environ, start_response, _sp):
+def disco(environ, start_response, _sp, cache):
     query = parse_qs(environ["QUERY_STRING"])
     entity_id = query["entityID"][0]
     _sid = query["sid"][0]
-    came_from = CACHE.outstanding_queries[_sid]
-    _sso = SSO(_sp, environ, start_response, cache=CACHE, **ARGS)
+    came_from = cache.outstanding_queries[_sid]
+    _sso = SSO(_sp, environ, start_response, cache=cache, **ARGS)
     resp = _sso.redirect_to_auth(_sso.sp, entity_id, came_from)
 
     # Add cookie
@@ -595,11 +595,11 @@ def disco(environ, start_response, _sp):
 
 
 # noinspection PyUnusedLocal
-def logout(environ, start_response, sp):
-    user = CACHE.get_user(environ)
+def logout(environ, start_response, sp, cache):
+    user = cache.get_user(environ)
 
     if user is None:
-        sso = SSO(sp, environ, start_response, cache=CACHE, **ARGS)
+        sso = SSO(sp, environ, start_response, cache=cache, **ARGS)
         return sso.do()
 
     logger.info("[logout] subject_id: '%s'", user.name_id)
@@ -630,15 +630,15 @@ def logout(environ, start_response, sp):
         else:  # result from logout, should be OK
             pass
 
-    return finish_logout(environ, start_response)
+    return finish_logout(environ, start_response, cache)
 
 
-def finish_logout(environ, start_response):
+def finish_logout(environ, start_response, cache):
     logger.info("[logout done] environ: %s", environ)
-    logger.info("[logout done] remaining subjects: %s", CACHE.uid2user.values())
+    logger.info("[logout done] remaining subjects: %s", cache.uid2user.values())
 
     # remove cookie and stored info
-    cookie = CACHE.delete_cookie(environ)
+    cookie = cache.delete_cookie(environ)
 
     resp = Response('You are now logged out of this service', headers=[
         cookie,
