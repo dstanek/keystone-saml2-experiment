@@ -18,7 +18,6 @@ from saml2 import ecp
 from saml2.ecp_client import PAOS_HEADER_INFO
 from saml2.extension.pefim import SPCertEnc
 from saml2.httputil import BadRequest
-from saml2.httputil import NotFound
 from saml2.httputil import NotImplemented
 from saml2.httputil import Redirect
 from saml2.httputil import Response
@@ -50,49 +49,6 @@ logger.setLevel(logging.INFO)
 SP = None
 SEED = ""
 POLICY = None
-
-
-def dict_to_table(ava, lev=0, width=1):
-    txt = ['<table border=%s bordercolor="black">\n' % width]
-    for prop, valarr in ava.items():
-        txt.append("<tr>\n")
-
-        if isinstance(prop, six.text_type):
-            prop = prop.encode('utf-8')
-        if isinstance(valarr, six.text_type):
-            valarr = valarr.encode('utf-8')
-
-        if isinstance(valarr, six.binary_type):
-            txt.append("<th>%s</th>\n" % prop)
-            txt.append("<td>%s</td>\n" % valarr)
-        elif isinstance(valarr, list):
-            i = 0
-            n = len(valarr)
-            for val in valarr:
-                if isinstance(val, six.text_type):
-                    val = val.encode('utf-8')
-                if not i:
-                    txt.append("<th rowspan=%d>%s</td>\n" % (len(valarr), prop))
-                else:
-                    txt.append("<tr>\n")
-                if isinstance(val, dict):
-                    txt.append("<td>\n")
-                    txt.extend(dict_to_table(val, lev + 1, width - 1))
-                    txt.append("</td>\n")
-                else:
-                    txt.append("<td>%s</td>\n" % val)
-                if n > 1:
-                    txt.append("</tr>\n")
-                n -= 1
-                i += 1
-        elif isinstance(valarr, dict):
-            txt.append("<th>%s</th>\n" % prop)
-            txt.append("<td>\n")
-            txt.extend(dict_to_table(valarr, lev + 1, width - 1))
-            txt.append("</td>\n")
-        txt.append("</tr>\n")
-    txt.append('</table>\n')
-    return txt
 
 
 class ECPResponse(object):
@@ -558,33 +514,6 @@ class SLO(Service):
 # ----------------------------------------------------------------------------
 
 
-# noinspection PyUnusedLocal
-def not_found(environ, start_response):
-    """Called if no URL matches."""
-    resp = NotFound('Not Found')
-    return resp(environ, start_response)
-
-
-# ----------------------------------------------------------------------------
-
-
-# noinspection PyUnusedLocal
-def main(environ, start_response, sp, cache):
-    user = cache.get_user(environ)
-
-    if user is None:
-        sso = SSO(sp, environ, start_response, cache=cache, **ARGS)
-        return sso.do()
-
-    body = dict_to_table(user.data)
-    authn_stmt = cgi.escape(user.authn_statement.encode('utf-8'))
-    body.append('<br><pre>' + authn_stmt + "</pre>")
-    body.append('<br><a href="/logout">logout</a>')
-
-    resp = Response(body)
-    return resp(environ, start_response)
-
-
 def disco(environ, start_response, _sp, cache):
     query = parse_qs(environ["QUERY_STRING"])
     entity_id = query["entityID"][0]
@@ -657,18 +586,14 @@ def finish_logout(environ, start_response, cache):
 # ----------------------------------------------------------------------------
 
 def metadata(environ, start_response):
-    try:
-        path = _args.path
-        if path is None or len(path) == 0:
-            path = os.path.dirname(os.path.abspath(__file__))
-        if path[-1] != "/":
-            path += "/"
-        metadata = create_metadata_string(path + "sp_conf.py", None,
-                                          _args.valid, _args.cert,
-                                          _args.keyfile,
-                                          _args.id, _args.name, _args.sign)
-        start_response('200 OK', [('Content-Type', "text/xml")])
-        return metadata
-    except Exception as ex:
-        logger.error("An error occured while creating metadata: %s", ex.message)
-        return not_found(environ, start_response)
+    path = _args.path
+    if path is None or len(path) == 0:
+        path = os.path.dirname(os.path.abspath(__file__))
+    if path[-1] != "/":
+        path += "/"
+    metadata = create_metadata_string(path + "sp_conf.py", None,
+                                      _args.valid, _args.cert,
+                                      _args.keyfile,
+                                      _args.id, _args.name, _args.sign)
+    start_response('200 OK', [('Content-Type', "text/xml")])
+    return metadata

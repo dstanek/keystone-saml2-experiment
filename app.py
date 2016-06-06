@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 import argparse
+import cgi
 import importlib
 import logging
 import re
@@ -9,17 +10,63 @@ import sys
 from wsgiref import simple_server
 
 from saml2.client import Saml2Client
+from saml2.httputil import NotFound
 from saml2.httputil import ServiceError
+from saml2.httputil import Response
 from saml2.response import StatusError
 from saml2.s_utils import rndstr
 from saml2 import time_util
 import saml2.xmldsig as ds
+import six
 from six.moves.http_cookies import SimpleCookie
 
 import sp
 
 
 logger = logging.getLogger(__name__)
+
+
+def dict_to_table(ava, lev=0, width=1):
+    txt = ['<table border=%s bordercolor="black">\n' % width]
+    for prop, valarr in ava.items():
+        txt.append("<tr>\n")
+
+        if isinstance(prop, six.text_type):
+            prop = prop.encode('utf-8')
+        if isinstance(valarr, six.text_type):
+            valarr = valarr.encode('utf-8')
+
+        if isinstance(valarr, six.binary_type):
+            txt.append("<th>%s</th>\n" % prop)
+            txt.append("<td>%s</td>\n" % valarr)
+        elif isinstance(valarr, list):
+            i = 0
+            n = len(valarr)
+            for val in valarr:
+                if isinstance(val, six.text_type):
+                    val = val.encode('utf-8')
+                if not i:
+                    txt.append("<th rowspan=%d>%s</td>\n" % (len(valarr), prop))
+                else:
+                    txt.append("<tr>\n")
+                if isinstance(val, dict):
+                    txt.append("<td>\n")
+                    txt.extend(dict_to_table(val, lev + 1, width - 1))
+                    txt.append("</td>\n")
+                else:
+                    txt.append("<td>%s</td>\n" % val)
+                if n > 1:
+                    txt.append("</tr>\n")
+                n -= 1
+                i += 1
+        elif isinstance(valarr, dict):
+            txt.append("<th>%s</th>\n" % prop)
+            txt.append("<td>\n")
+            txt.extend(dict_to_table(valarr, lev + 1, width - 1))
+            txt.append("</td>\n")
+        txt.append("</tr>\n")
+    txt.append('</table>\n')
+    return txt
 
 
 def _expiration(timeout, tformat=None):
@@ -86,12 +133,76 @@ class Cache(object):
         return tuple(cookie.output().split(": ", 1))
 
 
+class Middleware(object):
+    """SAML2 middleware.
+
+    Intercepts calls to keystone to enable it to work like a real
+    service provider.
+    """
+
+    def __init__(self, app):
+        self._app = app
+        self._urls = []
+        self._add_urls()
+
+    def __call__(self, environ, start_response):
+        path = environ.get('PATH_INFO', '').lstrip('/')
+        print('P', path)
+        logger.debug('<application> PATH: %r', path)
+
+        if path == 'metadata':
+            return metadata(environ, start_response)
+
+        logger.debug("Finding callback to run")
+        try:
+            for regex, spec in self._urls:
+                match = re.search(regex, path)
+                if match is not None:
+                    if isinstance(spec, tuple):
+                        callback, func_name, _sp = spec
+                        cls = callback(_sp, environ, start_response, CACHE)
+                        func = getattr(cls, func_name)
+                        return func()
+                    else:
+                        return spec(environ, start_response, SP, CACHE)
+            #return not_found(environ, start_response)
+        except StatusError as err:
+            logging.error("StatusError: %s" % err)
+            resp = BadRequest("%s" % err)
+            return resp(environ, start_response)
+        except Exception as err:
+            # _err = exception_trace("RUN", err)
+            # logging.error(exception_trace("RUN", _err))
+            print(err, file=sys.stderr)
+            resp = ServiceError("%s" % err)
+            return resp(environ, start_response)
+
+        return self._app(environ, start_response)
+
+    def _add_urls(self):
+        #self._urls.append((r'^$', sp.main))
+        self._urls.append((r'^disco', sp.disco))
+        self._urls.append((r'^logout$', sp.logout))
+
+        base = "acs"
+        self._urls.append(("%s/post$" % base, (sp.ACS, "post", SP)))
+        self._urls.append(("%s/post/(.*)$" % base, (sp.ACS, "post", SP)))
+        self._urls.append(("%s/redirect$" % base, (sp.ACS, "redirect", SP)))
+        self._urls.append(("%s/redirect/(.*)$" % base,
+                           (sp.ACS, "redirect", SP)))
+
+        base = "slo"
+        self._urls.append(("%s/post$" % base, (sp.SLO, "post", SP)))
+        self._urls.append(("%s/post/(.*)$" % base, (sp.SLO, "post", SP)))
+        self._urls.append(("%s/redirect$" % base, (sp.SLO, "redirect", SP)))
+        self._urls.append(("%s/redirect/(.*)$" % base,
+                          (sp.SLO, "redirect", SP)))
+
+
 def application(environ, start_response):
     """
     The main WSGI application. Dispatch the current request to
     the functions from above.
-
-    If nothing matches, call the `not_found` function.
 
     :param environ: The HTTP application environment
     :param start_response: The application to run when the handling of the
@@ -100,59 +211,27 @@ def application(environ, start_response):
     """
     path = environ.get('PATH_INFO', '').lstrip('/')
     logger.debug("<application> PATH: '%s'", path)
+    user = CACHE.get_user(environ)
 
-    if path == "metadata":
-        return metadata(environ, start_response)
+    if user is None:
+        if 'HTTP_COOKIE' in environ:
+            del environ['HTTP_COOKIE']
+        sso = sp.SSO(SP, environ, start_response, cache=CACHE, **ARGS)
+        return sso.do()
 
-    logger.debug("Finding callback to run")
-    try:
-        for regex, spec in urls:
-            match = re.search(regex, path)
-            if match is not None:
-                if isinstance(spec, tuple):
-                    callback, func_name, _sp = spec
-                    cls = callback(_sp, environ, start_response, CACHE)
-                    func = getattr(cls, func_name)
-                    return func()
-                else:
-                    return spec(environ, start_response, SP, CACHE)
-        return not_found(environ, start_response)
-    except StatusError as err:
-        logging.error("StatusError: %s" % err)
-        resp = BadRequest("%s" % err)
-        return resp(environ, start_response)
-    except Exception as err:
-        # _err = exception_trace("RUN", err)
-        # logging.error(exception_trace("RUN", _err))
-        print(err, file=sys.stderr)
-        resp = ServiceError("%s" % err)
-        return resp(environ, start_response)
+    body = dict_to_table(user.data)
+    authn_stmt = cgi.escape(user.authn_statement.encode('utf-8'))
+    body.append('<br><pre>' + authn_stmt + "</pre>")
+    body.append('<br><a href="/logout">logout</a>')
+
+    resp = Response(body)
+    return resp(environ, start_response)
 
 
-# map urls to functions
-urls = [
-    # Hmm, place holder, NOT used
-    ('place', ("holder", None)),
-    (r'^$', sp.main),
-    (r'^disco', sp.disco),
-    (r'^logout$', sp.logout),
-]
-
-
-def add_urls():
-    base = "acs"
-
-    urls.append(("%s/post$" % base, (sp.ACS, "post", SP)))
-    urls.append(("%s/post/(.*)$" % base, (sp.ACS, "post", SP)))
-    urls.append(("%s/redirect$" % base, (sp.ACS, "redirect", SP)))
-    urls.append(("%s/redirect/(.*)$" % base, (sp.ACS, "redirect", SP)))
-
-    base = "slo"
-
-    urls.append(("%s/post$" % base, (sp.SLO, "post", SP)))
-    urls.append(("%s/post/(.*)$" % base, (sp.SLO, "post", SP)))
-    urls.append(("%s/redirect$" % base, (sp.SLO, "redirect", SP)))
-    urls.append(("%s/redirect/(.*)$" % base, (sp.SLO, "redirect", SP)))
+def not_found(environ, start_response):
+    """Called if no URL matches."""
+    resp = NotFound('Not Found')
+    return resp(environ, start_response)
 
 
 if __name__ == '__main__':
@@ -216,7 +295,6 @@ if __name__ == '__main__':
 
     POLICY = service_conf.POLICY
 
-    add_urls()
     sign_alg = None
     digest_alg = None
     try:
@@ -229,7 +307,8 @@ if __name__ == '__main__':
         pass
     ds.DefaultSignature(sign_alg, digest_alg)
 
-    server = simple_server.make_server(HOST, PORT, application)
+    app = Middleware(application)
+    server = simple_server.make_server(HOST, PORT, app)
     logger.info("Server starting")
     print("SP listening on %s:%s" % (HOST, PORT))
     try:
