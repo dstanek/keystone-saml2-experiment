@@ -305,13 +305,12 @@ class User(object):
 
 
 class ACS(Service):
-    def __init__(self, sp, environ, start_response, cache=None, **kwargs):
+    def __init__(self, sp, environ, start_response, cache):
         Service.__init__(self, environ, start_response)
         self.sp = sp
         self.outstanding_queries = cache.outstanding_queries
         self.cache = cache
         self.response = None
-        self.kwargs = kwargs
 
     def do(self, response, binding, relay_state="", mtype="response"):
         """
@@ -600,7 +599,7 @@ class SSO(object):
 
 
 class SLO(Service):
-    def __init__(self, sp, environ, start_response, cache=None):
+    def __init__(self, sp, environ, start_response, cache):
         Service.__init__(self, environ, start_response)
         self.sp = sp
         self.cache = cache
@@ -792,7 +791,7 @@ def application(environ, start_response):
             if match is not None:
                 if isinstance(spec, tuple):
                     callback, func_name, _sp = spec
-                    cls = callback(_sp, environ, start_response, cache=CACHE)
+                    cls = callback(_sp, environ, start_response, CACHE)
                     func = getattr(cls, func_name)
                     return func()
                 else:
