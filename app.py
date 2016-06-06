@@ -151,7 +151,7 @@ class Middleware(object):
         logger.debug('<application> PATH: %r', path)
 
         if path == 'metadata':
-            return metadata(environ, start_response)
+            return sp.metadata(environ, start_response, _args)
 
         logger.debug("Finding callback to run")
         try:

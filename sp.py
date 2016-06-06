@@ -585,7 +585,7 @@ def finish_logout(environ, start_response, cache):
 
 # ----------------------------------------------------------------------------
 
-def metadata(environ, start_response):
+def metadata(environ, start_response, _args):
     path = _args.path
     if path is None or len(path) == 0:
         path = os.path.dirname(os.path.abspath(__file__))
