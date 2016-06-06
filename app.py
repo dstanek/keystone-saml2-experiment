@@ -10,6 +10,7 @@ import sys
 from wsgiref import simple_server
 
 from saml2.client import Saml2Client
+from saml2.httputil import BadRequest
 from saml2.httputil import NotFound
 from saml2.httputil import ServiceError
 from saml2.httputil import Response
